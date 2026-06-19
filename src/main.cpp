@@ -2,15 +2,15 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <Update.h>        // Thư viện gốc xử lý nạp Flash của ESP32
-#include "esp_ota_ops.h"   // Thư viện hệ thống quản lý phân vùng
+#include <Update.h>      // Thư viện gốc xử lý nạp Flash của ESP32
+#include "esp_ota_ops.h" // Thư viện hệ thống quản lý phân vùng
 
 // THÊM: Cấu hình chân nút nhấn vật lý để đảo vùng thủ công lúc khởi động
-const int BOOT_BUTTON_PIN = 33; 
+const int BOOT_BUTTON_PIN = 14;
 
 // Cấu hình mạng Wi-Fi
-const char* ssid = "vuweed";
-const char* password = "11111111";
+const char *ssid = "vuweed";
+const char *password = "11111111";
 
 bool ledState = 0;
 const int ledPin = 2;
@@ -19,7 +19,7 @@ AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
 // Biến toàn cục để hứng trạng thái checkbox từ Web gửi lên
-bool shouldSwitchPartition = true; 
+bool shouldSwitchPartition = true;
 
 // ==========================================
 // GIAO DIỆN CHÍNH (Đã sửa lỗi font tiếng Việt)
@@ -116,38 +116,47 @@ const char update_html[] PROGMEM = R"rawliteral(
 // ==========================================
 // CÁC HÀM XỬ LÝ LOGIC TRÊN ESP32
 // ==========================================
-void notifyClients() {
+void notifyClients()
+{
   ws.textAll(String(ledState));
 }
 
-void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
-  AwsFrameInfo *info = (AwsFrameInfo*)arg;
-  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len)
+{
+  AwsFrameInfo *info = (AwsFrameInfo *)arg;
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT)
+  {
     data[len] = 0;
-    if (strcmp((char*)data, "toggle") == 0) {
+    if (strcmp((char *)data, "toggle") == 0)
+    {
       ledState = !ledState;
       notifyClients();
     }
   }
 }
 
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
-  if (type == WS_EVT_DATA) {
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
+{
+  if (type == WS_EVT_DATA)
+  {
     handleWebSocketMessage(arg, data, len);
   }
 }
 
-String processor(const String& var){
-  if(var == "STATE") return ledState ? "BẬT" : "TẮT";
+String processor(const String &var)
+{
+  if (var == "STATE")
+    return ledState ? "BẬT" : "TẮT";
   return String();
 }
 
 // THÊM: Hàm kiểm tra nút nhấn cơ học để đổi vùng thủ công ngay khi khởi động
-void checkBootButton() {
-  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
-  delay(100); // Chờ ổn định điện áp trên chân GPIO 32 sau khi cấp nguồn
+void checkBootButton()
+{
   int state_button = 0;
   int button_confirm = 0;
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+  delay(100); // Chờ ổn định điện áp trên chân GPIO 32 sau khi cấp nguồn
   for (int i = 0; i < 10; i++)
   {
     state_button = digitalRead(BOOT_BUTTON_PIN);
@@ -160,72 +169,56 @@ void checkBootButton() {
       button_confirm--;
     }
     delay(50);
-
   }
   Serial.printf("[INIT] button_confirm = %d\r\n", button_confirm);
-  // Nếu nút nhấn nối chân 32 xuốn g GND được giữ khi bật nguồn/reset (Mức LOW)
-  // if (button_confirm > 5) {  
-  //   Serial.println("\n[INIT] Phát hiện nút nhấn GPIO 32 được giữ! Đang xử lý đổi vùng...");
 
-  //   const esp_partition_t* running_part = esp_ota_get_running_partition();
-  //   const esp_partition_t* next_part = esp_ota_get_next_update_partition(NULL);
+  const esp_partition_t *target_partition = NULL;
+  const esp_partition_t *running_partition = esp_ota_get_running_partition();
 
-  //   if ((next_part != NULL) && (running_part->label == "app0")) 
-  //   {
-  //     Serial.printf("[INIT] Đang hoạt động tại: %s. Tiến hành ÉP CHUYỂN vùng sang: %s\n", running_part->label, next_part->label);
-      
-  //     // Ghi lại cấu hình phân vùng khởi động mới vào otadata
-  //     esp_err_t err = esp_ota_set_boot_partition(next_part);
-  //     if (err == ESP_OK) {
-  //       Serial.println("[INIT] Đổi phân vùng thành công! Đang reset lại chip...");
-  //       delay(1000);
-  //       esp_restart(); 
-  //     } else {
-  //       Serial.printf("[INIT] Đổi phân vùng thất bại, mã lỗi: 0x%x\n", err);
-  //     }
-  //   } else {
-  //     Serial.println("[INIT] Không tìm thấy phân vùng OTA hợp lệ để chuyển đổi!");
-  //   }
-  // } else {
-  //   Serial.println("\n[INIT] Không nhấn nút GPIO 32. Chạy tiếp phân vùng mặc định.");
-  // }
-
-
-  const esp_partition_t* target_partition = NULL;
-  const esp_partition_t* running_partition = esp_ota_get_running_partition();
-
-  if (button_confirm > 5) {
+  if (button_confirm > 5)
+  {
     // Nếu nút bấm = 1 -> Mục tiêu ép buộc chạy phân vùng 1 (thường có label định danh là ota_0 hoặc app0)
     Serial.println("[INIT] Nút bấm = 1 -> Yêu cầu vào Vùng 1 (app0)");
     target_partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
-    if (!target_partition) {
+    if (!target_partition)
+    {
       target_partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
     }
-  } else {
+  }
+  else
+  {
     // Nếu nút bấm = 0 -> Mục tiêu ép buộc chạy phân vùng 2 (label định danh là ota_1 hoặc app1)
     Serial.println("[INIT] Nút bấm = 0 -> Yêu cầu vào Vùng 2 (app1)");
     target_partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
   }
 
   // Thực hiện chuyển vùng boot nếu phân vùng chỉ định khác với phân vùng hiện tại đang chạy
-  if (target_partition != NULL) {
-    if (target_partition != running_partition) {
+  if (target_partition != NULL)
+  {
+    if (target_partition != running_partition)
+    {
       Serial.printf("[INIT] Đang chạy ở phân vùng khác (%s). Tiến hành CHUYỂN VÙNG sang: %s\n", running_partition->label, target_partition->label);
       esp_err_t err = esp_ota_set_boot_partition(target_partition);
-      if (err == ESP_OK) {
+      if (err == ESP_OK)
+      {
         Serial.println("[INIT] Đổi vùng cấu hình thành công! Đang tự động Reset chip để khởi động lại vào vùng mới...");
         delay(1000);
         esp_restart();
-      } else {
+      }
+      else
+      {
         Serial.printf("[INIT] Đổi vùng thất bại, mã lỗi: 0x%x\n", err);
       }
-    } else {
+    }
+    else
+    {
       Serial.printf("[INIT] Hoàn tất! Chip đang chạy đúng phân vùng yêu cầu: %s\n", running_partition->label);
     }
-  } else {
+  }
+  else
+  {
     Serial.println("[INIT] LỖI: Không thể tìm thấy phân vùng đích trong Partition Table!");
   }
-
 }
 
 void get_flash_info()
@@ -235,7 +228,7 @@ void get_flash_info()
   // 1. Lấy dung lượng Flash được cấu hình khi biên dịch (Flash Size)
   uint32_t flashSize = ESP.getFlashChipSize();
   float flashSizeMB = (float)flashSize / (1024.0 * 1024.0);
-  
+
   Serial.printf("Dung lượng bộ nhớ Flash tổng: %u Bytes (~%.1f MB)\n", flashSize, flashSizeMB);
 
   // 2. Lấy tốc độ giao tiếp với chip Flash (Flash Speed)
@@ -245,11 +238,12 @@ void get_flash_info()
   // 3. Lấy chế độ kết nối Flash (SPI Mode như DIO, QIO, DOUT, QOUT)
   FlashMode_t flashMode = ESP.getFlashChipMode();
   Serial.printf("Chế độ kết nối Flash (SPI Mode ID): %d\n", flashMode);
-  
+
   Serial.println("------------------------------------");
 }
 
-void setup(){
+void setup()
+{
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
@@ -259,7 +253,8 @@ void setup(){
 
   // 2. Kết nối Wi-Fi
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
     Serial.print(".");
   }
@@ -267,24 +262,23 @@ void setup(){
   Serial.println(WiFi.localIP());
 
   // In thông tin phân vùng hiện tại lên Serial
-  const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t *running = esp_ota_get_running_partition();
   Serial.printf("Phân vùng đang chạy hiện tại: %s\n", running->label);
 
   ws.onEvent(onEvent);
   server.addHandler(&ws);
 
   // Route trang chủ điều khiển LED
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(200, "text/html", index_html, processor);
-  });
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(200, "text/html", index_html, processor); });
 
   // Route trang nạp phần mềm OTA
-  server.on("/update_page", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(200, "text/html", update_html);
-  });
+  server.on("/update_page", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(200, "text/html", update_html); });
 
   // Xử lý HTTP POST nhận file dữ liệu .bin từ trình duyệt
-  server.on("/update", HTTP_POST, [](AsyncWebServerRequest *request){
+  server.on("/update", HTTP_POST, [](AsyncWebServerRequest *request)
+            {
     if (request->hasParam("switch")) {
       String switchVal = request->getParam("switch")->value();
       shouldSwitchPartition = (switchVal == "true");
@@ -309,8 +303,8 @@ void setup(){
     if (!hasError && shouldSwitchPartition) {
       delay(1000);
       esp_restart();
-    }
-  }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
+    } }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+            {
     
     if(!index){
       Serial.printf("Bắt đầu nhận file: %s\n", filename.c_str());
@@ -337,47 +331,16 @@ void setup(){
       } else {
         Update.printError(Serial);
       }
-    }
-  });
+    } });
 
   server.begin();
   Serial.printf("VER 1 đang hoạt động");
 }
 
-void loop() {
+void loop()
+{
   digitalWrite(ledPin, ledState);
   // Serial.printf("ledPin = %d", ledState);
   ws.cleanupClients();
 }
 
-// void setup()
-// {
-
-
-//     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
-//   delay(100); // Chờ ổn định điện áp trên chân GPIO 32 sau khi cấp nguồn
-
-//   // Nếu nút nhấn nối chân 32 xuốn g GND được giữ khi bật nguồn/reset (Mức LOW)
-//   if (digitalRead(BOOT_BUTTON_PIN) == LOW) 
-//   {  
-//     printf ("ON\r\n");
-//   }
-//   else
-//   {
-//     printf("OFF\r\n");
-//   }
-// }
-// void loop()
-// {
-
-//   // Nếu nút nhấn nối chân 32 xuốn g GND được giữ khi bật nguồn/reset (Mức LOW)
-//   if (digitalRead(BOOT_BUTTON_PIN) == LOW) 
-//   {  
-//     printf ("ON\r\n");
-//   }
-//   else
-//   {
-//     printf("OFF\r\n");
-//   }
-//   delay(100);
-// }
